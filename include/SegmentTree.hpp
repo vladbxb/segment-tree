@@ -19,30 +19,30 @@ class SegmentTree
 {
 public:
 	using Operation = std::function<T(const T& nr1, const T& nr2)>;
-	SegmentTree(const T* arr, size_t size, Operation op, const T& neutralElement);
+	SegmentTree(T* arr, size_t size, Operation op, const T& neutralElement);
 	T queryValue(size_t leftIndex, size_t rightIndex) const;
 	void updateValue(size_t valueIndex, const T& value);
 	~SegmentTree();
 private:
-	const T* arr;
+	T* arr;
 	size_t size;
 	Node<T>* root;
 	Operation op;
 	T neutralElement;
-	Node<T>* buildTree(const T* arr, size_t leftIndex, size_t rightIndex);
+	Node<T>* buildTree(T* arr, size_t leftIndex, size_t rightIndex);
 	T query(Node<T>* currentNode, size_t queryLeft, size_t queryRight, size_t leftBound, size_t rightBound) const;
 	bool update(Node<T>* currentNode, size_t leftIndex, size_t rightIndex, size_t valueIndex, const T& value);
 	void deleteNode(Node<T>* node);
 };
 
 template <typename T>
-SegmentTree<T>::SegmentTree(const T* arr, size_t size, Operation op, const T& neutralElement) : arr(arr), size(size), root(nullptr), op(op), neutralElement(neutralElement)
+SegmentTree<T>::SegmentTree(T* arr, size_t size, Operation op, const T& neutralElement) : arr(arr), size(size), root(nullptr), op(op), neutralElement(neutralElement)
 {
 	root = buildTree(arr, 0, size - 1);
 }
 
 template <typename T>
-Node<T>* SegmentTree<T>::buildTree(const T* arr, size_t leftIndex, size_t rightIndex)
+Node<T>* SegmentTree<T>::buildTree(T* arr, size_t leftIndex, size_t rightIndex)
 {
 	if (leftIndex > rightIndex)
 		return nullptr;
@@ -110,7 +110,8 @@ bool SegmentTree<T>::update(Node<T>* currentNode, size_t leftIndex, size_t right
 	// Only update the nodes on the path of the recursion
 	if (modification)
 	{
-		currentNode->value = op(currentNode->left, currentNode->right);
+		currentNode->value = op(currentNode->left->value, currentNode->right->value);
+		arr[valueIndex] = currentNode->value;
 		return true;
 	}
 	return false;
