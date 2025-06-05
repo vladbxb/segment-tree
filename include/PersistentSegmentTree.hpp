@@ -1,6 +1,6 @@
 #pragma once
 
-// General-purpose recursive Segment Tree implementation supporting any associative operation on number types
+// General-purpose recursive Segment Tree implementation supporting any associative operation on number types, with persistence (versioning)
 
 #include <functional>
 
@@ -19,30 +19,32 @@ class SegmentTree
 {
 public:
 	using Operation = std::function<T(const T& nr1, const T& nr2)>;
-	SegmentTree(T* arr, size_t size, Operation op, const T& neutralElement);
+	SegmentTree(const T* arr, size_t size, Operation op, const T& neutralElement);
 	T queryValue(size_t leftIndex, size_t rightIndex) const;
 	void updateValue(size_t valueIndex, const T& value);
+	void setVersion(size_t versionIndex);
 	~SegmentTree();
 private:
-	T* arr;
+	const T* arr;
 	size_t size;
-	Node<T>* root;
+	std::vector<Node<T>*> roots;
 	Operation op;
 	T neutralElement;
+	size_t versionIndex;
 	Node<T>* buildTree(T* arr, size_t leftIndex, size_t rightIndex);
 	T query(Node<T>* currentNode, size_t queryLeft, size_t queryRight, size_t leftBound, size_t rightBound) const;
-	bool update(Node<T>* currentNode, size_t leftIndex, size_t rightIndex, size_t valueIndex, const T& value);
+	Node<T>* update(Node<T>* currentNode, size_t leftIndex, size_t rightIndex, size_t valueIndex, const T& value);
 	void deleteNode(Node<T>* node);
 };
 
 template <typename T>
-SegmentTree<T>::SegmentTree(T* arr, size_t size, Operation op, const T& neutralElement) : arr(arr), size(size), root(nullptr), op(op), neutralElement(neutralElement)
+SegmentTree<T>::SegmentTree(const T* arr, size_t size, Operation op, const T& neutralElement) : arr(arr), size(size), op(op), neutralElement(neutralElement), versionIndex(0)
 {
-	root = buildTree(arr, 0, size - 1);
+	roots.push_back(buildTree(arr, 0, size - 1));
 }
 
 template <typename T>
-Node<T>* SegmentTree<T>::buildTree(T* arr, size_t leftIndex, size_t rightIndex)
+Node<T>* SegmentTree<T>::buildTree(const T* arr, size_t leftIndex, size_t rightIndex)
 {
 	// Pointers beyond leaf nodes should be null
 	if (leftIndex > rightIndex)
@@ -69,7 +71,7 @@ Node<T>* SegmentTree<T>::buildTree(T* arr, size_t leftIndex, size_t rightIndex)
 template <typename T>
 T SegmentTree<T>::queryValue(size_t leftIndex, size_t rightIndex) const
 {
-	return query(root, leftIndex, rightIndex, 0, size - 1);
+	return query(roots[versionIndex], leftIndex, rightIndex, 0, size - 1);
 }
 
 template <typename T>
@@ -83,7 +85,7 @@ T SegmentTree<T>::query(Node<T>* currentNode, size_t queryLeft, size_t queryRigh
 	if (queryLeft <= leftBound && rightBound <= queryRight)
 		return currentNode->value;
 
-	size_t middleIndex = (leftBound + rightBound) / 2;
+	size_t middleIndex = leftBound + (rightBound - leftBound) / 2;
 
 	// Keep searching left and right until the queried value can be resolved
 	return op(query(currentNode->left, queryLeft, queryRight, leftBound, middleIndex), query(currentNode->right, queryLeft, queryRight, middleIndex + 1, rightBound));
@@ -92,43 +94,53 @@ T SegmentTree<T>::query(Node<T>* currentNode, size_t queryLeft, size_t queryRigh
 template <typename T>
 void SegmentTree<T>::updateValue(size_t valueIndex, const T& value)
 {
-	update(root, 0, size - 1, valueIndex, value);
+	roots.push_back(update(roots[versionIndex++], 0, size - 1, valueIndex, value));
 }
 
 template <typename T>
-bool SegmentTree<T>::update(Node<T>* currentNode, size_t leftIndex, size_t rightIndex, size_t valueIndex, const T& value)
+Node<T>* SegmentTree<T>::update(Node<T>* currentNode, size_t leftIndex, size_t rightIndex, size_t valueIndex, const T& value)
 {
 	if (leftIndex > rightIndex || currentNode == nullptr)
-		return false;
+		return nullptr;
 
 	// If the search closed in on the leaf node corresponding to the specified index, update the value of the node
 	// and return true to indicate modification has happened
 	if (leftIndex == rightIndex && leftIndex == valueIndex)
 	{
-		currentNode->value = value;
-		return true;
+		Node<T>* newNode = new Node<T>(value);
+		return newNode;
 	}
 
 	size_t middleIndex = leftIndex + (rightIndex - leftIndex) / 2;
 
-	bool modification;
+	Node<T>* newLeftNode = currentNode->left;
+	Node<T>* newRightNode = currentNode->right;
 
 	// Only traverse the path corresponding to the nodes which should change
 	if (valueIndex <= middleIndex)
-		modification = update(currentNode->left, leftIndex, middleIndex, valueIndex, value);
+		newLeftNode = update(currentNode->left, leftIndex, middleIndex, valueIndex, value);
 	else
-		modification = update(currentNode->right, middleIndex + 1, rightIndex, valueIndex, value);
+		newRightNode = update(currentNode->right, middleIndex + 1, rightIndex, valueIndex, value);
 
 	// Only update the nodes on the path of the recursion, and the specified array's value as well
-	if (modification)
-	{
-		currentNode->value = op(currentNode->left->value, currentNode->right->value);
-		arr[valueIndex] = currentNode->value;
-		return true;
-	}
-	return false;
+	T newValue = op(newLeftNode->value, newRightNode->value);
+	Node<T>* newNode = new Node<T>(newValue);
+	newNode->left = newLeftNode;
+	newNode->right = newRightNode;
+	return newNode;
 }
 
+template <typename T>
+void SegmentTree<T>::setVersion(size_t versionIndex)
+{
+	if (versionIndex => 0 && versionIndex <= roots.size() - 1)
+	{
+		this->versionIndex = versionIndex;
+		return;
+	}
+	// If provided an invalid version, fall back to latest version
+	versionIndex = roots.size() - 1;
+}
 
 template <typename T>
 void SegmentTree<T>::deleteNode(Node<T>* node)
@@ -139,11 +151,14 @@ void SegmentTree<T>::deleteNode(Node<T>* node)
 	deleteNode(node->left);
 	deleteNode(node->right);
 	delete node;
+	// Set node to nullptr after deletion as to prevent dangling pointers for other versions
+	node = nullptr;
 }
 
 template <typename T>
 SegmentTree<T>::~SegmentTree()
 {
-	if (root)
-		deleteNode(root);
+	for (auto it = roots.begin(); it != roots.end(); ++it)
+		if (*it)
+			deleteNode(*it);
 }
